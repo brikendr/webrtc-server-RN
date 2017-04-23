@@ -5,23 +5,11 @@
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 </head>
 <body>
-<div id="textRoom" style="display: none;">
-  <div id="textRoomContent">
-    <h3>Text Room</h3>
-  </div>
-  <input id="textRoomInput" >
-  <button onclick="textRoomPress();">Send</button>
-</div>
-<video id="selfView" autoplay></video>
-<div id="remoteViewContainer"></div>
-<div id="roomIDContainer">
-  <input id="roomID" value="abc">
-  <button onclick="press();">Join/Create room</button>
-</div>
+  <video id="selfView" autoplay></video>
 </body>
-<script src="/socket.io/socket.io.js"></script>
 <script type="text/javascript">
-var socket = io();
+
+var socket = new WebSocket('ws://localhost:4443/');
 
 var RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection || window.msRTCPeerConnection;
 var RTCSessionDescription = window.RTCSessionDescription || window.mozRTCSessionDescription || window.webkitRTCSessionDescription || window.msRTCSessionDescription;
@@ -29,50 +17,45 @@ navigator.getUserMedia = navigator.getUserMedia || navigator.mozGetUserMedia || 
 
 var twilioIceServers = [
      { url: 'stun:global.stun.twilio.com:3478?transport=udp' }
-     // { url: 'turn:global.turn.twilio.com:3478?transport=udp',
-     //   username: 'ea757ad2c42b932c7f2abe480295e7eb039dc2b13b78c86bc412818ed51e5eea',
-     //   credential: 'MPnnojPRoPDI+B3kLONGF9P440Lb8NkrTq+FxxJBVro=' },
-     // { url: 'turn:global.turn.twilio.com:3478?transport=tcp',
-     //   username: 'ea757ad2c42b932c7f2abe480295e7eb039dc2b13b78c86bc412818ed51e5eea',
-     //   credential: 'MPnnojPRoPDI+B3kLONGF9P440Lb8NkrTq+FxxJBVro=' },
-     // { url: 'turn:global.turn.twilio.com:443?transport=tcp',
-     //   username: 'ea757ad2c42b932c7f2abe480295e7eb039dc2b13b78c86bc412818ed51e5eea',
-     //   credential: 'MPnnojPRoPDI+B3kLONGF9P440Lb8NkrTq+FxxJBVro=' } 
 ];
-var configuration = {"iceServers": [{"url": "stun:stun.l.google.com:19302"}]};
-// configuration.iceServers = twilioIceServers;
+var configuration = {"iceServers": [{"url": "stun:stun4.l.google.com:19302"}]};
 
 var pcPeers = {};
 var selfView = document.getElementById("selfView");
 var remoteViewContainer = document.getElementById("remoteViewContainer");
 var localStream;
 
-function getLocalStream() {
-  navigator.getUserMedia({ "audio": true, "video": true }, function (stream) {
+
+const qvgaConstraints = {audio: false, video: {width: {exact: 320}, height: {exact: 240}, frameRate: {min: 40, max: 60}}},
+      vgaConstraints = {audio: false, video: {width: {exact: 640}, height: {exact: 480}, frameRate: {min: 40, max: 60}}},
+      hdConstraints = {audio: false, video: {width: {exact: 1280}, height: {exact: 720}, frameRate: {min: 40, max: 60}}},
+      fullHdConstraints = {audio: false, video: {width: {exact: 1920}, height: {exact: 1080},frameRate: {min: 40, max: 60}}};
+
+function getLocalStream(callback) {
+  navigator.getUserMedia(hdConstraints, function (stream) {
     localStream = stream;
     selfView.src = URL.createObjectURL(stream);
     selfView.muted = true;
+    console.log('Printing local stream ', localStream);
+    callback()
   }, logError);
 }
 
-function join(roomID) {
-  socket.emit('join', roomID, function(socketIds){
-    console.log('join', socketIds);
-    for (var i in socketIds) {
-      var socketId = socketIds[i];
-      createPC(socketId, true);
-    }
-  });
+function join() {
+  createPC(1, true);
 }
 
 function createPC(socketId, isOffer) {
+  console.log('CREATING PC');
   var pc = new RTCPeerConnection(configuration);
   pcPeers[socketId] = pc;
 
   pc.onicecandidate = function (event) {
     console.log('onicecandidate', event);
     if (event.candidate) {
-      socket.emit('exchange', {'to': socketId, 'candidate': event.candidate });
+      var obj = {'msgtype': 'exchange','to': "all", 'candidate': event.candidate };
+      socket.send(JSON.stringify(obj));
+      //socket.emit('exchange', {'to': socketId, 'candidate': event.candidate });
     }
   };
 
@@ -81,7 +64,9 @@ function createPC(socketId, isOffer) {
       console.log('createOffer', desc);
       pc.setLocalDescription(desc, function () {
         console.log('setLocalDescription', pc.localDescription);
-        socket.emit('exchange', {'to': socketId, 'sdp': pc.localDescription });
+        var obj = {'msgtype': 'exchange','to': "all", 'sdp': pc.localDescription };
+        socket.send(JSON.stringify(obj));
+        //socket.emit('exchange', {'to': socketId, 'sdp': pc.localDescription });
       }, logError);
     }, logError);
   }
@@ -111,7 +96,9 @@ function createPC(socketId, isOffer) {
     element.src = URL.createObjectURL(event.stream);
     remoteViewContainer.appendChild(element);
   };
+
   pc.addStream(localStream);
+  
   function createDataChannel() {
     if (pc.textDataChannel) {
       return;
@@ -143,42 +130,43 @@ function createPC(socketId, isOffer) {
   return pc;
 }
 
+
 function exchange(data) {
-  var fromId = data.from;
   var pc;
-  if (fromId in pcPeers) {
-    pc = pcPeers[fromId];
-  } else {
-    pc = createPC(fromId, false);
+  pc = pcPeers[1];
+  if (pcPeers[1] == null) {
+    pc = createPC(1, false);
   }
 
-  if (data.sdp) {
+  console.log("PC IS", pc);
+  if (data['sdp']) {
     console.log('exchange sdp', data);
-    pc.setRemoteDescription(new RTCSessionDescription(data.sdp), function () {
+    pc.setRemoteDescription(new RTCSessionDescription(data['sdp']), function () {
       if (pc.remoteDescription.type == "offer")
         pc.createAnswer(function(desc) {
           console.log('createAnswer', desc);
           pc.setLocalDescription(desc, function () {
             console.log('setLocalDescription', pc.localDescription);
-            socket.emit('exchange', {'to': fromId, 'sdp': pc.localDescription });
+            var obj = {'msgtype': 'exchange', 'to': "all", 'sdp': pc.localDescription }
+            socket.send(JSON.stringify(obj));
+            //socket.emit('exchange', {'to': fromId, 'sdp': pc.localDescription });
           }, logError);
         }, logError);
     }, logError);
   } else {
     console.log('exchange candidate', data);
-    pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+    pc.addIceCandidate(new RTCIceCandidate(data['candidate']));
   }
 }
 
-function leave(socketId) {
-  console.log('leave', socketId);
-  var pc = pcPeers[socketId];
+function leave() {
+  console.log('leave', 1);
+  var pc = pcPeers[1];
   pc.close();
-  delete pcPeers[socketId];
-  var video = document.getElementById("remoteView" + socketId);
-  if (video) video.remove();
+  delete pcPeers[1];
 }
 
+/*
 socket.on('exchange', function(data){
   exchange(data);
 });
@@ -190,7 +178,26 @@ socket.on('connect', function(data) {
   console.log('connect');
   getLocalStream();
 });
+*/
 
+socket.addEventListener('open', function (event) {
+  console.log('SOCKET OPENED');
+  getLocalStream(function() {
+    join();
+  });
+});
+
+socket.addEventListener('close', function (event) {
+    leave();
+});
+
+socket.addEventListener('message', function (event) {
+  var msg = JSON.parse(event.data);
+  if(msg['msgtype'] == 'exchange') {
+    console.log('CALLING EXCHANGE');
+    exchange(msg);
+  }
+})
 function logError(error) {
   console.log("logError", error);
 }

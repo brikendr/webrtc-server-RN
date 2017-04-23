@@ -2,6 +2,7 @@ var express = require('express');
 var app = express();
 var fs = require('fs');
 var open = require('open');
+var WebSocket = require('ws');
 var options = {
   key: fs.readFileSync('./fake-keys/privatekey.pem'),
   cert: fs.readFileSync('./fake-keys/certificate.pem')
@@ -15,9 +16,7 @@ if (process.env.LOCAL) {
 } else {
   server = http.createServer(app);
 }
-var io = require('socket.io')(server);
-
-var roomList = {};
+var io = new WebSocket.Server({ server });
 
 app.get('/', function(req, res){
   console.log('get /');
@@ -29,6 +28,59 @@ server.listen(serverPort, function(){
     open('https://localhost:' + serverPort)
   }
 });
+
+function socketIdsInRoom(name) {
+  var socketIds = io.nsps['/'].adapter.rooms[name];
+  if (socketIds) {
+    var collection = [];
+    for (var key in socketIds) {
+      collection.push(key);
+    }
+    return collection;
+  } else {
+    return [];
+  }
+}
+
+var count = 0;
+var clients = [];
+
+io.on('connection', function(socket) {
+  var id = clients.length == 0 ? 0: clients.length;
+  clients[id] = socket;
+  socket['unique_id'] = id;
+  console.log((new Date()) + ' Connection accepted [' + id + ']. AND LENGTH IS ', clients.length);
+  
+  socket.on('message', function incoming(message) {
+    var msg = JSON.parse(message);
+    io.broadcast(message);
+  });
+
+	socket.on('close', function(code, message){
+    console.log("SOCKET UNIQUE ID IS ", socket.unique_id);
+		clients.splice(socket.unique_id,1);
+    console.log((new Date()) + ' DELETING SOCKET AT POSITION ' + socket.unique_id + ' disconnected. COUNT IS ', clients.length);
+    
+});
+});
+
+io.broadcast = function(data) {
+  // Loop through all clients
+  for(var i in clients){
+    if(clients[i].readyState === WebSocket.OPEN) {
+      // Send a message to the client with the message
+      clients[i].send(data);
+    }
+  }
+/*
+	io.clients.forEach(function each(client) {
+		if (client.readyState === WebSocket.OPEN) {
+			client.send(data);
+		}
+	});*/
+};
+
+/*
 
 function socketIdsInRoom(name) {
   var socketIds = io.nsps['/'].adapter.rooms[name];
@@ -70,3 +122,4 @@ io.on('connection', function(socket){
     to.emit('exchange', data);
   });
 });
+*/
