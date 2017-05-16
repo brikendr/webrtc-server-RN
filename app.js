@@ -1,12 +1,16 @@
 var express = require('express');
-var app = express();
-var fs = require('fs');
-var open = require('open');
-var WebSocket = require('ws');
+    app = express(),
+    fs = require('fs'),
+    open = require('open'),
+    opn  = require('opn'),
+    WebSocket = require('ws');
+
+
 var options = {
   key: fs.readFileSync('./fake-keys/privatekey.pem'),
   cert: fs.readFileSync('./fake-keys/certificate.pem')
 };
+
 var serverPort = (process.env.PORT  || 4443);
 var https = require('https');
 var http = require('http');
@@ -22,6 +26,7 @@ app.get('/', function(req, res){
   console.log('get /');
   res.sendFile(__dirname + '/index.html');
 });
+
 server.listen(serverPort, function(){
   console.log('server up and running at %s port', serverPort);
   if (process.env.LOCAL) {
@@ -42,8 +47,10 @@ function socketIdsInRoom(name) {
   }
 }
 
-var count = 0;
-var clients = [];
+var count = 0,
+    clients = []
+    isAppRunningInChrome = false;
+
 
 io.on('connection', function(socket) {
   var id = clients.length == 0 ? 0: clients.length;
@@ -51,6 +58,11 @@ io.on('connection', function(socket) {
   socket['unique_id'] = id;
   console.log((new Date()) + ' Connection accepted [' + id + ']. AND LENGTH IS ', clients.length);
   
+  if(!isAppRunningInChrome) {
+    console.log("OPENING CHROME TAB");
+    opn('http://localhost:'+serverPort, {app: ['chrome']});
+    isAppRunningInChrome = true;
+  }
   socket.on('message', function incoming(message) {
     var msg = JSON.parse(message);
     io.broadcast(message);
