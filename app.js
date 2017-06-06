@@ -11,16 +11,20 @@ var options = {
   cert: fs.readFileSync('./fake-keys/certificate.pem')
 };
 
-var serverPort = (process.env.PORT  || 4443);
-var https = require('https');
-var http = require('http');
-var server;
+var serverPort = (process.env.PORT  || 4443),
+    https = require('https'),
+    http = require('http'),
+    server,
+    advertismentProtocol = 'http';
+
 if (process.env.LOCAL) {
   server = https.createServer(options, app);
 } else {
   server = http.createServer(app);
 }
 var io = new WebSocket.Server({ server });
+//var io = new WebSocket.Server({ port : wsPort, host : serverHost }); //new WebSocket.Server({ port: serverPort });
+//console.log('WS Server listening on ', serverHost, ":", wsPort);
 
 app.get('/', function(req, res){
   console.log('get /');
@@ -28,29 +32,14 @@ app.get('/', function(req, res){
 });
 
 server.listen(serverPort, function(){
-  console.log('server up and running at %s port', serverPort);
-  if (process.env.LOCAL) {
-    open('https://localhost:' + serverPort)
-  }
+  console.log('Server up and running at %s port', serverPort);
 });
 
-function socketIdsInRoom(name) {
-  var socketIds = io.nsps['/'].adapter.rooms[name];
-  if (socketIds) {
-    var collection = [];
-    for (var key in socketIds) {
-      collection.push(key);
-    }
-    return collection;
-  } else {
-    return [];
-  }
-}
+
 
 var count = 0,
     clients = []
     isAppRunningInChrome = false;
-
 
 io.on('connection', function(socket) {
   var id = clients.length == 0 ? 0: clients.length;
@@ -73,7 +62,7 @@ io.on('connection', function(socket) {
 		clients.splice(socket.unique_id,1);
     console.log((new Date()) + ' DELETING SOCKET AT POSITION ' + socket.unique_id + ' disconnected. COUNT IS ', clients.length);
     
-});
+  });
 });
 
 io.broadcast = function(data) {
@@ -92,8 +81,21 @@ io.broadcast = function(data) {
 	});*/
 };
 
-/*
 
+
+/*
+function socketIdsInRoom(name) {
+  var socketIds = io.nsps['/'].adapter.rooms[name];
+  if (socketIds) {
+    var collection = [];
+    for (var key in socketIds) {
+      collection.push(key);
+    }
+    return collection;
+  } else {
+    return [];
+  }
+}
 function socketIdsInRoom(name) {
   var socketIds = io.nsps['/'].adapter.rooms[name];
   if (socketIds) {
